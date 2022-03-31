@@ -1,0 +1,199 @@
+---
+title: "SEM group assignment (data analysis)"
+author: "Xiaochang Zhao, Joyce Pang, Laura Springer"
+date: "3/28/2022"
+output:
+  html_document: default
+  pdf_document: default
+---
+## Introduction 
+
+This is a R-markdown file that explicates the data analysis we did for our group assignment. 
+This document includes part A (fitting the hypothesized model) and part B (testing for equal variances and means)
+
+We are questioning measurement invariance for the need for uniqueness, perceived stress, and political cynicism between males and females. Females might have less strongly articulated opinions as they are expected to be more modest and less assertive than males. Thus, females might respond more conservatively on questionnaires while males might show more extreme answers. Consequently, this can lead to bigger variances for males than females, potentially biasing results if you do not take sex into account. 
+Using 11 items, we will test if the measurement for the need for uniqueness, perceived stress, and political cynicism differs for males and females.
+
+The questions we used to build our model:
+
+Higher need for uniqueness (NU):  
+Q3: I think I am a special person  
+Q4: I like to be the center of attention  
+Q6: I like to look at myself in the mirror  
+
+Perceived stress (PS):  
+Q8: I have difficulty falling asleep  
+Q9: I often wake up in the middle of the night and cannot fall asleep again  
+Q13: I am worried about my current sleeping behaviour  
+Q14: My sleep interferes with my daily functioning e.g., daytime fatigue mood ability to function at work daily chores concentration memory mood etc
+
+Political cynicism (PC):  
+Q17: Covid 19 regulations are a way for governments to gain more power  
+Q19: Politicians usually do not tell us about the true motives of their decisions  
+Q51: I believe that the government is hiding information about the COVID-19 pandemic from me  
+Q62: the governments’ guidelines to prevent the spread of Covid-19 are appropriate
+
+
+## Instructions
+please adapt to your folder path after downloading the csv file on OSF "https://osf.io/3v2rt/"
+```{r, eval=FALSE, echo=TRUE}
+data <- read.csv("NA_2020_data.csv")
+```
+
+Below are some packages needed for running the analysis script 
+```{r, eval=FALSE, echo=TRUE}
+if (! require(tidyverse)) install.packages('tidyverse')
+if (! require(semTools)) install.packages('semTools')
+if (! require(semPlot)) install.packages('semPlot')
+```
+
+## Part A 
+```{r, echo=TRUE, eval=TRUE, warning=FALSE, message=FALSE}
+library(tidyverse)
+library(semTools)
+library(semPlot)
+data <- read.csv("NA_2020_data.csv")
+data1 <- data[!data$gender == "Other",] 
+## As we are using gender with two categories, we exclude those who answered "Other" on gender
+data1$gender <- as.factor(data1$gender)
+levels(data1$gender)
+
+Model1 <- '
+  NU  =~ Q3 + Q4 + Q6
+  PS =~ Q8 + Q9 + Q13 + Q14
+  PC  =~ Q17 + Q19 + Q51 + Q62
+'
+fit1 <- cfa(Model1, data1)
+fit1
+fitMeasures(fit1)
+#rmsea = 0.078
+#df = 41, chisq = 160.917, p.value <0.01. The exact fit for Model 1 is rejected.
+#cfi, rni and tli are equal or lower than 0.9. 
+#This indicates that the fit of Model 1 is not good.
+#Therefore, we check modification indices to add possible paths for a better fit.
+
+#modification indices
+modificationindices(fit1) %>% arrange(-mi) %>% head(10)
+#Modification indices imply that Q8 and Q9 have shared variance.
+#Q8 ~~ Q9 is added in Model 2 to see whether Model 2 is significantly better than Model 1
+
+Model2 <- '
+  NU  =~ Q3 + Q4 + Q6
+  PS =~ Q8 + Q9 + Q13 + Q14
+  PC  =~ Q17 + Q19 + Q51 + Q62
+  Q8 ~~ Q9
+'
+fit2 <- cfa(Model2, data1)
+
+anova(fit1,fit2)
+fitMeasures(fit2)
+#fit 2 has a lower AIC and BIC and a significant the chi-square value. 
+#Therefore, Model 2 is significantly better than Model 1.
+#Furthermore, fit indices such as RMSEA, CFI, RNI indicate a good fit for Model 2.
+#Chi-square = 99.16, DF = 40, p < 0.001. The exact fit of Model 2 is rejected. 
+#However, the test for exact fit may be too sensitive to minor misspecifications with large sample size in this case. 
+#Overall, Model 2 fits the dataset better than Model 1.
+
+modificationindices(fit1) %>% arrange(-mi) %>% head(10)
+#Modification indices imply that Q29 and Q33 have shared variance.
+#We also go on to add Q13 ~~ Q14 in Model 3 and test whether Model 3 is significantly better than Model 2.
+
+Model3 <- '
+  NU  =~ Q3 + Q4 + Q6
+  PS =~ Q8 + Q9 + Q13 + Q14
+  PC  =~ Q17 + Q19 + Q51 + Q62
+  Q8 ~~ Q9
+  Q13 ~~ Q14
+'
+fit3 <- cfa(Model3, data1)
+anova(fit1,fit2,fit3)
+fitMeasures(fit3)
+#p-value = 0.0956, indicating that Model 3 is not significantly better than Model 2 
+#AIC is smaller by one unit (not meaningful) and the BIC is higher. 
+#Model 2 fits the data better than Model 3.
+
+#Conclusion
+#Model 2 is better than Model 1 and Model 3.
+#We will use model 2 for the analysis.
+
+#Plot for Model 2:
+semPaths(fit2, whatLabels="est",
+         sizeMan = 5,
+         groups = "latent",
+         layout = "tree",
+         edge.label.cex = .5,
+         style = "lisrel",
+         pastel = TRUE)
+```
+
+
+
+# Part B 
+
+Part B includes data analysis needed for testing equal variances and means for the two groups. 
+
+## We first test for measurement invariance 
+```{r, echo=TRUE, eval= TRUE}
+conf <- cfa(Model2, data1, group = "gender", std.lv=TRUE)
+fitMeasures(conf, c( "chisq", "pvalue", "rmsea", "cfi", "rni", "ifi")) 
+#The configural invariance model has a significant p-value which rejects the exact fit. 
+#But other incremental fit indices indicate a good fit (rmsea = 0.0625 and cfi, rni, ifi are close to 0.95). 
+#So we will go on and test for other models. 
+
+weak <- cfa(Model2, data1, group = "gender",
+            group.equal="loadings", std.lv=TRUE)
+anova(conf, weak)
+#The weak invariance model has a lower AIC and BIC and a non-significant p-value when compared to the configural invariance model. 
+#So, weak invariance is accepted. 
+
+
+strong <- cfa(Model2, data1, group="gender", 
+              group.equal = c("loadings", "intercepts"), std.lv=TRUE)
+anova(conf, weak, strong)
+#The strong invariance model has a lower AIC and BIC and a non-significant p-value when compared to the weak invariance model. 
+#So, strong invariance is accepted. 
+
+
+strict <- cfa(Model2, data1, group="gender", 
+              group.equal= c("loadings", "intercepts", "residuals",
+                             "residual.covariances"))
+
+anova(strong,strict)
+#The strict invariance model has a smaller BIC but it also has a similar AIC and a significant p-value. 
+#Though it can be debatable, strict invariance is not accepted. 
+
+table <- anova(conf,weak,strong,strict)
+knitr::kable(table[,1:4])
+#The above table shows all chi-square, df, AIC and BIC for all models. 
+```
+
+## We will test for equal variance and means with the strong model
+```{r, echo=TRUE, eval=TRUE}
+eqvars <- cfa(Model2, data1, group="gender", 
+              group.equal = c("loadings", "intercepts","lv.variances"))
+
+anova(strong,eqvars)
+#The model assuming equal variance is non-significant.
+#It also has a similar AIC but lower BIC. 
+#So, this model is accepted.
+#The assumption of equal variances between groups holds
+#We do not reject the hypothesis that the variances of both groups are equal.
+
+
+
+eqmeans <- cfa(Model2, data1, group="gender", 
+               group.equal = c("loadings", "intercepts","lv.variances", 
+                               "means"))
+
+anova(eqvars,eqmeans)
+
+#The model assuming equal variance and equal means is non-significant. 
+#It also has a lower AIC and BIC compared to the equal variance model.
+#So, the model of equal variance and means is accepted.
+#The assumption of equal means between groups holds.
+#We do not reject the hypothesis that the means of both groups are equal.
+#In our case, this means that we do not have reason to believe that 
+#the questions regarding need for uniqueness, perceived stress and political 
+#cynicicsm are answered differently by male and female. 
+#Hence, we can assume measurement invariance. 
+```
